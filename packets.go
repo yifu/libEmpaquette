@@ -3,6 +3,7 @@ package libEmpaquette
 import (
 	"io"
 	"log"
+	"fmt"
 	"github.com/HewlettPackard/structex"
 	"encoding/binary"
 )
@@ -43,10 +44,9 @@ type connectVarHdr struct {
 
 type connectPayload struct {
 	len uint16
-	name [10]byte
 }
 
-func CreateConnect(w WriterByteWriter) error {
+func CreateConnect(w WriterByteWriter, clientid string) error {
 	var hdr fixedHdr
 	hdr.flags = 0x00
 	hdr.ctrl_pkt_type = CONNECT
@@ -59,7 +59,8 @@ func CreateConnect(w WriterByteWriter) error {
 	var varHdr connectVarHdr
 	var payload connectPayload
 
-	varLen := binary.Size(varHdr) + binary.Size(payload)
+	varLen := binary.Size(varHdr) + binary.Size(payload) + len(clientid)
+	fmt.Println("len(", clientid, ") = ", len(clientid))
 	encodeLen(w, varLen)
 	
 	varHdr.len = 4
@@ -72,12 +73,17 @@ func CreateConnect(w WriterByteWriter) error {
 		log.Fatal(err)
 	}
 	
-	name := [...]byte{'C','l','i','e','n','t','t','e','s','t'}
-	payload.len = uint16(len(name))
-	payload.name = name
+	payload.len = uint16(len(clientid))
 	err = binary.Write(w, binary.BigEndian, payload)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	for _, b := range []byte(clientid) {
+		err := w.WriteByte(b)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	return nil

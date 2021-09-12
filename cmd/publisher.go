@@ -28,7 +28,7 @@ func main() {
 
 	w := bufio.NewWriter(conn)
 
-	err = libEmpaquette.CreateConnect(w)
+	err = libEmpaquette.CreateConnect(w, "clienttes-toto")
 	if err != nil {
 		log.Fatal(err)
 	}
