@@ -27,20 +27,18 @@ func main() {
 	}
 
 	w := bufio.NewWriter(conn)
-
 	err = libEmpaquette.CreateConnect(w, "clienttes-toto")
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	w.Flush()
 
-	buf := make([]byte, 100)
-	n, err := conn.Read(buf)
+	r := bufio.NewReader(conn)
+	b, err := r.ReadByte()
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("n = ", n)
+	libEmpaquette.ProcessPkt(b, r)
 
 	fmt.Println("End of publisher")
 }
