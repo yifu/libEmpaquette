@@ -31,7 +31,7 @@ type WriterByteWriter interface {
 
 type fixedHdr struct {
 	flags uint8 `bitfield:"4"`
-	ctrl_pkt_type uint8 `bitfield:"4"`
+	ctrlPktType uint8 `bitfield:"4"`
 }
 
 type connectVarHdr struct {
@@ -49,7 +49,7 @@ type connectPayload struct {
 func CreateConnect(w WriterByteWriter, clientid string) error {
 	var hdr fixedHdr
 	hdr.flags = 0x00
-	hdr.ctrl_pkt_type = CONNECT
+	hdr.ctrlPktType = CONNECT
 	
 	err := structex.Encode(w, hdr)
 	if err != nil {
