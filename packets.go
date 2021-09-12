@@ -35,7 +35,7 @@ type fixedHdr struct {
 }
 
 type connectVarHdr struct {
-	len uint16
+	nameLen uint16
 	name [4] byte
 	lvl uint8
 	connectFlags uint8
@@ -63,8 +63,9 @@ func CreateConnect(w WriterByteWriter, clientid string) error {
 	fmt.Println("len(", clientid, ") = ", len(clientid))
 	encodeLen(w, varLen)
 	
-	varHdr.len = 4
-	varHdr.name = [...]byte{'M','Q','T','T'}
+	name := [...]byte{'M','Q','T','T'}
+	varHdr.nameLen = uint16(len(name))
+	varHdr.name = name
 	varHdr.lvl = 4
 	varHdr.connectFlags = 0x00
 	varHdr.keepAlive = 3600
