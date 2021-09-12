@@ -56,10 +56,12 @@ func CreateConnect(w WriterByteWriter) error {
 		return err
 	}
 
-	varLen := 22
-	encodeLen(w, varLen)
-
 	var varHdr connectVarHdr
+	var payload connectPayload
+
+	varLen := binary.Size(varHdr) + binary.Size(payload)
+	encodeLen(w, varLen)
+	
 	varHdr.len = 4
 	varHdr.name = [...]byte{'M','Q','T','T'}
 	varHdr.lvl = 4
@@ -69,8 +71,7 @@ func CreateConnect(w WriterByteWriter) error {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	var payload connectPayload
+	
 	name := [...]byte{'C','l','i','e','n','t','t','e','s','t'}
 	payload.len = uint16(len(name))
 	payload.name = name
