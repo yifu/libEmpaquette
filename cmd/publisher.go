@@ -8,10 +8,6 @@ import (
 	"github.com/yifu/libEmpaquette"
 )
 
-type myTCPConn struct {
-	*net.TCPConn
-}
-
 func main() {
 	fmt.Println("Hello world2.")
 	
