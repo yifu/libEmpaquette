@@ -12,12 +12,6 @@ type myTCPConn struct {
 	*net.TCPConn
 }
 
-func (conn myTCPConn) WriteByte(b byte) error {
-	buf := []byte {b}
-	_, err := conn.Write(buf)
-	return err
-}
-
 func main() {
 	fmt.Println("Hello world2.")
 	
