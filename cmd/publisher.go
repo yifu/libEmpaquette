@@ -17,18 +17,14 @@ func main() {
 	}
 
 	w := bufio.NewWriter(conn)
-	err = libEmpaquette.CreateConnect(w, "clienttes-toto")
+	err = libEmpaquette.SendConnect(w, "clienttesttoto")
 	if err != nil {
 		log.Fatal(err)
 	}
 	w.Flush()
 
 	r := bufio.NewReader(conn)
-	b, err := r.ReadByte()
-	if err != nil {
-		log.Fatal(err)
-	}
-	libEmpaquette.ProcessPkt(b, r)
+	libEmpaquette.ProcessPkt(r)
 
 	fmt.Println("End of publisher")
 }

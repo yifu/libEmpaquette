@@ -4,8 +4,8 @@ import (
 	"io"
 	"log"
 	"fmt"
-	"bufio"
-	"github.com/HewlettPackard/structex"
+	"bytes"
+	"math"
 	"encoding/binary"
 )
 
@@ -35,96 +35,148 @@ const (
 	CONN_REFUSED_NOT_AUTHORI
 )
 
-type WriterByteWriter interface {
-	io.ByteWriter
-	io.Writer
-}
+type str string
 
-type fixedHdr struct {
-	flags uint8 `bitfield:"4"`
-	ctrlPktType uint8 `bitfield:"4"`
-}
-
-type connectVarHdr struct {
-	nameLen uint16
-	name [4] byte
-	lvl uint8
-	connectFlags uint8
-	keepAlive uint16
-}
-
-type connectPayload struct {
-	len uint16
-}
-
-type connackVarHdr struct {
-	SP uint8 `bitfield:"1"`
-	ReturnCode uint8
-}
-
-func CreateConnect(w WriterByteWriter, clientid string) error {
-	var hdr fixedHdr
-	hdr.flags = 0x00
-	hdr.ctrlPktType = CONNECT
-	
-	err := structex.Encode(w, hdr)
-	if err != nil {
-		return err
+func (s str) Write(w io.Writer) error {
+	dest := make([]byte, 2)
+	if len(s) > math.MaxUint16 {
+		return fmt.Errorf("String: %v > math.MaxUInt16.", len(s))
 	}
-
-	var varHdr connectVarHdr
-	var payload connectPayload
-
-	varLen := binary.Size(varHdr) + binary.Size(payload) + len(clientid)
-	fmt.Println("len(", clientid, ") = ", len(clientid))
-	encodeLen(w, varLen)
-	
-	name := [...]byte{'M','Q','T','T'}
-	varHdr.nameLen = uint16(len(name))
-	varHdr.name = name
-	varHdr.lvl = 4
-	varHdr.connectFlags = 0x00
-	varHdr.keepAlive = 3600
-	err = binary.Write(w, binary.BigEndian, varHdr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	
-	payload.len = uint16(len(clientid))
-	err = binary.Write(w, binary.BigEndian, payload)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for _, b := range []byte(clientid) {
-		err := w.WriteByte(b)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
+	binary.BigEndian.PutUint16(dest, uint16(len(s)))
+	w.Write(dest)
+	w.Write([]byte(s))
 	return nil
 }
 
-func encodeLen(w io.ByteWriter, varLen int) {
-	if varLen == 0 {
-		w.WriteByte(0)
-		return
-	}
-
-	for varLen > 0 {
-		var encodedByte byte = byte(varLen % 128)
-		varLen = varLen / 128
-		if varLen > 0 {
-			encodedByte = encodedByte | 128
-		}
-		w.WriteByte(encodedByte)
-	}
+type fixedHdr struct {
+	flags uint8
+	controlPacketType uint8
+	remainingLength int
 }
 
-func ProcessPkt(b byte, r *bufio.Reader) {
-	typ := extractType(b)
-	switch typ {
+func (fh *fixedHdr) Read(r io.Reader) error {
+	buf := make([]byte, 1)
+	_, err := r.Read(buf)
+	if err != nil {
+		return err
+	}
+	src := buf[0]
+	fh.flags = src & 0xF
+	fh.controlPacketType = (src >> 4) & 0xF
+	fh.remainingLength, err = decodeRemLen(r)
+	return err
+}
+
+func (fh fixedHdr) Write(w io.Writer) error {
+	var dest uint8
+	dest = (fh.controlPacketType & 0xF)
+	dest = dest << 4
+	dest = dest | (fh.flags & 0xF)
+
+	buf := make([]byte, 1)
+	buf[0] = dest
+	w.Write(buf)
+
+	return encodeRemLen(w, fh.remainingLength)
+}
+
+type connectMsg struct {
+	protocolName str
+	protocolLevel uint8
+	connectFlags uint8
+	keepAlive uint16
+	
+	clientID str
+}
+
+func (m connectMsg) Write(w io.Writer) error {
+	if err := m.protocolName.Write(w); err != nil {
+		return err
+	}
+	
+	protocolLevel := make([]byte, 1)
+	protocolLevel[0] = m.protocolLevel
+	if _, err := w.Write(protocolLevel); err != nil {
+		return err
+	}
+
+	connectFlags := make([]byte, 1)
+	connectFlags[0] = m.connectFlags
+	if _, err := w.Write(connectFlags); err != nil {
+		return err
+	}
+
+	buf := make([]byte, 2)
+	binary.BigEndian.PutUint16(buf, m.keepAlive)
+	if _, err := w.Write(buf); err != nil {
+		return err
+	}
+	
+	if err := m.clientID.Write(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+type connackMsg struct {
+	SP uint8 
+	ReturnCode uint8
+}
+
+func (m *connackMsg) Read(r io.Reader) error {
+	buf := make([]byte, 2)
+	total := 0
+	for total != len(buf) {
+		n, err := r.Read(buf)
+		total += n
+		if err != nil {
+			return err
+		}
+	}
+	m.SP = buf[0]
+	m.ReturnCode = buf[1]
+	return nil
+}
+
+func SendConnect(w io.Writer, clientID string) error {
+	fmt.Println("Send CONNECT")
+	var fh fixedHdr
+	fh.flags = 0x00
+	fh.controlPacketType = CONNECT
+	fh.remainingLength = 0
+	
+	var msg connectMsg
+	msg.protocolName = "MQTT"
+	msg.protocolLevel = 4
+	msg.connectFlags = 0x00
+	msg.keepAlive = 3600
+	
+	msg.clientID = str(clientID)
+
+	var body bytes.Buffer
+	if err := msg.Write(&body); err != nil {
+		log.Fatal(err)
+	}
+	fh.remainingLength = body.Len()
+	if err := fh.Write(w); err != nil {
+		log.Fatal(err)
+	}
+	if _, err := body.WriteTo(w); err != nil {
+		log.Fatal(err)
+	}
+	return nil
+}
+
+func ProcessPkt(r io.Reader) {
+	var fh fixedHdr
+	if err := fh.Read(r); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("fh.ctrlpkttype=", fh.controlPacketType)
+	fmt.Println("fh.flags=", fh.flags)
+	fmt.Println("rem len = ", fh.remainingLength)
+
+	switch fh.controlPacketType {
 	case CONNACK:
 		processConnack(r)
 	}
@@ -134,35 +186,58 @@ func extractType(b byte) byte {
 	return (b >> 4) & 0xFF;
 }
 
-func processConnack(r *bufio.Reader) {
+func processConnack(r io.Reader) {
 	fmt.Println("Proces CONNACK")
-	len := decodeRemLen(r)
-	fmt.Println("len = ", len)
-	var hdr connackVarHdr
-	err := structex.Decode(r, &hdr)
-	if err != nil {
+
+	var msg connackMsg
+	if err := msg.Read(r); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("sp = ", hdr.SP)
-	fmt.Println("return code = ", hdr.ReturnCode)
+	fmt.Println("sp = ", msg.SP)
+	fmt.Println("return code = ", msg.ReturnCode)
 }
 
-func decodeRemLen(r *bufio.Reader) int {
+func encodeRemLen(w io.Writer, varLen int) error {
+	if varLen == 0 {
+		dest := make([]byte, 1)
+		dest[0] = 0
+		_, err := w.Write(dest)
+		return err
+	}
+
+	for varLen > 0 {
+		var encodedByte byte = byte(varLen % 128)
+		varLen = varLen / 128
+		if varLen > 0 {
+			encodedByte = encodedByte | 128
+		}
+		dest := make([]byte, 1)
+		dest[0] = encodedByte
+		if _, err := w.Write(dest); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func decodeRemLen(r io.Reader) (int, error) {
 	multiplier := 1
 	value := 0
 	for {
-		encodedByte, err := r.ReadByte()
+		buf := make([]byte, 1)
+		_, err := r.Read(buf)
 		if err != nil {
-			log.Fatal(err)
+			return 0, err
 		}
+		encodedByte := buf[0]
 		value += int(encodedByte & 127) * multiplier
 		multiplier *= 128
 		if multiplier > 128*128*128 {
-			log.Fatal("Malformed Remaining Length")
+			return 0, fmt.Errorf("Malformed Remaining Length")
 		}
 		if (encodedByte & 128) == 0 {
 			break
 		}
 	}
-	return value
+	return value, nil
 }
