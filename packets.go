@@ -187,7 +187,7 @@ func extractType(b byte) byte {
 }
 
 func processConnack(r io.Reader) {
-	fmt.Println("Proces CONNACK")
+	fmt.Println("Process CONNACK")
 
 	var msg connackMsg
 	if err := msg.Read(r); err != nil {
