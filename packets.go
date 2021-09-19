@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"bytes"
 	"math"
+	"bufio"
+	"net"
 	"encoding/binary"
 )
 
@@ -138,7 +140,7 @@ func (m *connackMsg) Read(r io.Reader) error {
 	return nil
 }
 
-func SendConnect(w io.Writer, clientID string) error {
+func (ctx *Context) SendConnect(clientID string) error {
 	fmt.Println("Send CONNECT")
 	var fh fixedHdr
 	fh.flags = 0x00
@@ -158,18 +160,19 @@ func SendConnect(w io.Writer, clientID string) error {
 		log.Fatal(err)
 	}
 	fh.remainingLength = body.Len()
-	if err := fh.Write(w); err != nil {
+	if err := fh.Write(ctx.w); err != nil {
 		log.Fatal(err)
 	}
-	if _, err := body.WriteTo(w); err != nil {
+	if _, err := body.WriteTo(ctx.w); err != nil {
 		log.Fatal(err)
 	}
+	ctx.w.Flush()
 	return nil
 }
 
-func ProcessPkt(r io.Reader) {
+func (ctx *Context) ProcessPkt() {
 	var fh fixedHdr
-	if err := fh.Read(r); err != nil {
+	if err := fh.Read(ctx.r); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("fh.ctrlpkttype=", fh.controlPacketType)
@@ -178,7 +181,7 @@ func ProcessPkt(r io.Reader) {
 
 	switch fh.controlPacketType {
 	case CONNACK:
-		processConnack(r)
+		ctx.processConnack()
 	}
 }
 
@@ -186,11 +189,11 @@ func extractType(b byte) byte {
 	return (b >> 4) & 0xFF;
 }
 
-func processConnack(r io.Reader) {
+func (ctx *Context)processConnack() {
 	fmt.Println("Process CONNACK")
 
 	var msg connackMsg
-	if err := msg.Read(r); err != nil {
+	if err := msg.Read(ctx.r); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("session present =", msg.SessionPresent)
@@ -240,4 +243,18 @@ func decodeRemLen(r io.Reader) (int, error) {
 		}
 	}
 	return value, nil
+}
+
+type Context struct {
+	r *bufio.Reader
+	w *bufio.Writer
+}
+
+func Connect(ipport string) (Context, error) {
+	conn, err := net.Dial("tcp", ipport)
+	if err != nil {
+		return Context{}, err
+	}
+
+	return Context{r: bufio.NewReader(conn), w: bufio.NewWriter(conn)}, nil
 }

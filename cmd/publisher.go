@@ -3,28 +3,24 @@ package main
 import (
 	"fmt"
 	"log"
-	"net"
-	"bufio"
 	"github.com/yifu/libEmpaquette"
 )
 
 func main() {
 	fmt.Println("Hello world2.")
 	
-	conn, err := net.Dial("tcp", "192.168.0.15:1883")
+	ctx, err := libEmpaquette.Connect("192.168.0.15:1883")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	w := bufio.NewWriter(conn)
-	err = libEmpaquette.SendConnect(w, "clienttesttoto")
+	err = ctx.SendConnect("clienttesttoto")
 	if err != nil {
 		log.Fatal(err)
 	}
-	w.Flush()
 
-	r := bufio.NewReader(conn)
-	libEmpaquette.ProcessPkt(r)
+	fmt.Println("calling process pkt.")
+	ctx.ProcessPkt()
 
 	fmt.Println("End of publisher")
 }
