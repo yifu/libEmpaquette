@@ -119,7 +119,7 @@ func (m connectMsg) Write(w io.Writer) error {
 }
 
 type connackMsg struct {
-	SP uint8 
+	SessionPresent uint8 
 	ReturnCode uint8
 }
 
@@ -133,7 +133,7 @@ func (m *connackMsg) Read(r io.Reader) error {
 			return err
 		}
 	}
-	m.SP = buf[0]
+	m.SessionPresent = buf[0] & 0x1
 	m.ReturnCode = buf[1]
 	return nil
 }
@@ -193,8 +193,8 @@ func processConnack(r io.Reader) {
 	if err := msg.Read(r); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("sp = ", msg.SP)
-	fmt.Println("return code = ", msg.ReturnCode)
+	fmt.Println("session present =", msg.SessionPresent)
+	fmt.Println("return code =", msg.ReturnCode)
 }
 
 func encodeRemLen(w io.Writer, varLen int) error {
