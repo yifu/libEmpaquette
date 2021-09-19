@@ -280,10 +280,10 @@ func (ctx *Context) PublishMsg() error {
 	return nil
 }
 
-func (ctx *Context) ProcessPkt() {
+func (ctx *Context) ProcessPkt() error {
 	var fh fixedHdr
 	if err := fh.Read(ctx.r); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	fmt.Println("fh.ctrlpkttype=", fh.controlPacketType)
 	fmt.Println("fh.dup =", fh.dup)
@@ -293,23 +293,29 @@ func (ctx *Context) ProcessPkt() {
 
 	switch fh.controlPacketType {
 	case CONNACK:
-		ctx.processConnack()
+		if err := ctx.processConnack(); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("Unprocessed type of message: %v.", fh.controlPacketType)
 	}
+	return nil
 }
 
 func extractType(b byte) byte {
 	return (b >> 4) & 0xFF;
 }
 
-func (ctx *Context)processConnack() {
+func (ctx *Context)processConnack() error {
 	fmt.Println("Process CONNACK")
 
 	var msg connackMsg
 	if err := msg.Read(ctx.r); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	fmt.Println("session present =", msg.SessionPresent)
 	fmt.Println("return code =", msg.ReturnCode)
+	return nil
 }
 
 func encodeRemLen(w io.Writer, varLen int) error {

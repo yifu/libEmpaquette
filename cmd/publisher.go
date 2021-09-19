@@ -20,7 +20,10 @@ func main() {
 	}
 
 	fmt.Println("calling process pkt.")
-	ctx.ProcessPkt()
+	if err := ctx.ProcessPkt(); err != nil {
+		log.Fatal(err)
+	}
+
 	if err := ctx.PublishMsg(); err != nil {
 		log.Fatal(err)
 	}
