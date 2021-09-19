@@ -21,6 +21,9 @@ func main() {
 
 	fmt.Println("calling process pkt.")
 	ctx.ProcessPkt()
+	if err := ctx.PublishMsg(); err != nil {
+		log.Fatal(err)
+	}
 
 	fmt.Println("End of publisher")
 }

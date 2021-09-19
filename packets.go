@@ -39,6 +39,22 @@ const (
 
 type str string
 
+func (s *str) Read(r io.Reader) error {
+	buf := make([]byte, 2)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return err
+	}
+	len := binary.BigEndian.Uint16(buf)
+
+	buf = make([]byte, len)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return err
+	}
+
+	*s = str(buf)
+	return nil
+} 
+
 func (s str) Write(w io.Writer) error {
 	dest := make([]byte, 2)
 	if len(s) > math.MaxUint16 {
@@ -51,8 +67,10 @@ func (s str) Write(w io.Writer) error {
 }
 
 type fixedHdr struct {
-	flags uint8
 	controlPacketType uint8
+	dup uint8
+	qos uint8
+	retain uint8
 	remainingLength int
 }
 
@@ -63,7 +81,12 @@ func (fh *fixedHdr) Read(r io.Reader) error {
 		return err
 	}
 	src := buf[0]
-	fh.flags = src & 0xF
+	flags := src & 0xF
+	fh.retain = flags & 0x1
+	flags >>= 1
+	fh.qos = flags & 0x3
+	flags >>= 2
+	fh.dup = flags & 0x1
 	fh.controlPacketType = (src >> 4) & 0xF
 	fh.remainingLength, err = decodeRemLen(r)
 	return err
@@ -72,8 +95,12 @@ func (fh *fixedHdr) Read(r io.Reader) error {
 func (fh fixedHdr) Write(w io.Writer) error {
 	var dest uint8
 	dest = (fh.controlPacketType & 0xF)
-	dest = dest << 4
-	dest = dest | (fh.flags & 0xF)
+	dest <<= 1
+	dest |= (fh.dup & 0x1)
+	dest <<= 1
+	dest |= (fh.qos & 0x3)
+	dest <<= 2
+	dest |= (fh.retain & 0x1)
 
 	buf := make([]byte, 1)
 	buf[0] = dest
@@ -140,10 +167,66 @@ func (m *connackMsg) Read(r io.Reader) error {
 	return nil
 }
 
+type publishMsg struct {
+	topicName str
+	pktID uint16
+	payload string
+}
+
+func (pm *publishMsg) Read(r io.Reader, fh fixedHdr) error {
+	if err := pm.topicName.Read(r); err != nil {
+		return err
+	}
+
+	if fh.qos > 0 {
+		buf := make([]byte, 2)
+		if _, err := io.ReadFull(r, buf); err != nil {
+			return err
+		}
+		pm.pktID = binary.BigEndian.Uint16(buf)
+	}
+
+	payloadLen := fh.remainingLength
+	payloadLen -= len(pm.topicName) - 2 /* sizeof hdr of pm.topicName */
+	if fh.qos > 0 {
+		payloadLen -= 2 /* sizeof pm.pktID */
+	}
+
+	buf := make([]byte, payloadLen)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return err
+	}
+	pm.payload = string(buf)
+
+	return nil
+}
+
+func (pm publishMsg) Write(w io.Writer, fh fixedHdr) error {
+	if err := pm.topicName.Write(w); err != nil {
+		return err
+	}
+
+	if fh.qos > 0 {
+		buf := make([]byte, 2)
+		binary.BigEndian.PutUint16(buf, pm.pktID)
+		if _, err := w.Write(buf); err != nil {
+			return err
+		}
+	}
+
+	if _, err := w.Write([]byte(pm.payload)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (ctx *Context) SendConnect(clientID string) error {
 	fmt.Println("Send CONNECT")
 	var fh fixedHdr
-	fh.flags = 0x00
+	fh.dup = 0x00
+	fh.qos = 0x00
+	fh.retain = 0x00
 	fh.controlPacketType = CONNECT
 	fh.remainingLength = 0
 	
@@ -152,11 +235,38 @@ func (ctx *Context) SendConnect(clientID string) error {
 	msg.protocolLevel = 4
 	msg.connectFlags = 0x00
 	msg.keepAlive = 3600
-	
 	msg.clientID = str(clientID)
 
 	var body bytes.Buffer
 	if err := msg.Write(&body); err != nil {
+		log.Fatal(err)
+	}
+	fh.remainingLength = body.Len()
+	if err := fh.Write(ctx.w); err != nil {
+		log.Fatal(err)
+	}
+	if _, err := body.WriteTo(ctx.w); err != nil {
+		log.Fatal(err)
+	}
+	ctx.w.Flush()
+	return nil
+}
+
+func (ctx *Context) PublishMsg() error {
+	fmt.Println("PUBLISH MSG")
+	var fh fixedHdr
+	fh.dup = 0x00
+	fh.qos = 0x00
+	fh.retain = 0x00
+	fh.controlPacketType = PUBLISH
+	fh.remainingLength = 0
+
+	var msg publishMsg
+	msg.topicName = "topic/test"
+	msg.payload = "payloadtest"
+
+	var body bytes.Buffer
+	if err := msg.Write(&body, fh); err != nil {
 		log.Fatal(err)
 	}
 	fh.remainingLength = body.Len()
@@ -176,7 +286,9 @@ func (ctx *Context) ProcessPkt() {
 		log.Fatal(err)
 	}
 	fmt.Println("fh.ctrlpkttype=", fh.controlPacketType)
-	fmt.Println("fh.flags=", fh.flags)
+	fmt.Println("fh.dup =", fh.dup)
+	fmt.Println("fh.qos=", fh.qos)
+	fmt.Println("fh.retain=", fh.retain)
 	fmt.Println("rem len = ", fh.remainingLength)
 
 	switch fh.controlPacketType {
