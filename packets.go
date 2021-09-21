@@ -95,11 +95,14 @@ func (fh *fixedHdr) Read(r io.Reader) error {
 func (fh fixedHdr) Write(w io.Writer) error {
 	var dest uint8
 	dest = (fh.controlPacketType & 0xF)
+	
 	dest <<= 1
 	dest |= (fh.dup & 0x1)
-	dest <<= 1
-	dest |= (fh.qos & 0x3)
+	
 	dest <<= 2
+	dest |= (fh.qos & 0x3)
+	
+	dest <<= 1
 	dest |= (fh.retain & 0x1)
 
 	buf := make([]byte, 1)
@@ -221,6 +224,19 @@ func (pm publishMsg) Write(w io.Writer, fh fixedHdr) error {
 	return nil
 }
 
+type pubackMsg struct {
+	pktID uint16
+}
+
+func (pm *pubackMsg) Read(r io.Reader) error {
+	buf := make([]byte, 2)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return err
+	}
+	pm.pktID = binary.BigEndian.Uint16(buf)
+	return nil
+}
+
 func (ctx *Context) SendConnect(clientID string) error {
 	fmt.Println("Send CONNECT")
 	var fh fixedHdr
@@ -256,12 +272,13 @@ func (ctx *Context) PublishMsg() error {
 	fmt.Println("PUBLISH MSG")
 	var fh fixedHdr
 	fh.dup = 0x00
-	fh.qos = 0x00
+	fh.qos = 0x01
 	fh.retain = 0x00
 	fh.controlPacketType = PUBLISH
 	fh.remainingLength = 0
 
 	var msg publishMsg
+	msg.pktID = 1
 	msg.topicName = "topic/test"
 	msg.payload = "payloadtest"
 
@@ -296,6 +313,10 @@ func (ctx *Context) ProcessPkt() error {
 		if err := ctx.processConnack(); err != nil {
 			return err
 		}
+	case PUBACK:
+		if err := ctx.processPuback(); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("Unprocessed type of message: %v.", fh.controlPacketType)
 	}
@@ -315,6 +336,17 @@ func (ctx *Context)processConnack() error {
 	}
 	fmt.Println("session present =", msg.SessionPresent)
 	fmt.Println("return code =", msg.ReturnCode)
+	return nil
+}
+
+func (ctx *Context)processPuback() error {
+	fmt.Println("Process PUBACK")
+
+	var msg pubackMsg
+	if err := msg.Read(ctx.r); err != nil {
+		return err
+	}
+	fmt.Println("pktID =", msg.pktID)
 	return nil
 }
 
