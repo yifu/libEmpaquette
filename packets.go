@@ -237,6 +237,54 @@ func (pm *pubackMsg) Read(r io.Reader) error {
 	return nil
 }
 
+type pubrecMsg struct {
+	pktID uint16
+}
+
+func (pm *pubrecMsg) Read(r io.Reader) error {
+	buf := make([]byte, 2)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return err
+	}
+	pm.pktID = binary.BigEndian.Uint16(buf)
+	return nil
+}
+
+type pubrelMsg struct {
+	pktID uint16
+}
+
+func (pm *pubrelMsg) Read(r io.Reader) error {
+	buf := make([]byte, 2)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return err
+	}
+	pm.pktID = binary.BigEndian.Uint16(buf)
+	return nil
+}
+
+func (pm *pubrelMsg) Write(w io.Writer) error {
+	buf := make([]byte, 2)
+	binary.BigEndian.PutUint16(buf, pm.pktID)
+	if _, err := w.Write(buf); err != nil {
+		return err
+	}
+	return nil
+}
+
+type pubcompMsg struct {
+	pktID uint16
+}
+
+func (pm *pubcompMsg) Read(r io.Reader) error {
+	buf := make([]byte, 2)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return err
+	}
+	pm.pktID = binary.BigEndian.Uint16(buf)
+	return nil
+}
+
 func (ctx *Context) SendConnect(clientID string) error {
 	fmt.Println("Send CONNECT")
 	var fh fixedHdr
@@ -272,7 +320,7 @@ func (ctx *Context) PublishMsg() error {
 	fmt.Println("PUBLISH MSG")
 	var fh fixedHdr
 	fh.dup = 0x00
-	fh.qos = 0x01
+	fh.qos = 0x02
 	fh.retain = 0x00
 	fh.controlPacketType = PUBLISH
 	fh.remainingLength = 0
@@ -317,6 +365,14 @@ func (ctx *Context) ProcessPkt() error {
 		if err := ctx.processPuback(); err != nil {
 			return err
 		}
+	case PUBREC:
+		if err := ctx.processPubrec(); err != nil {
+			return err
+		}
+	case PUBCOMP:
+		if err := ctx.processPubcomp(); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("Unprocessed type of message: %v.", fh.controlPacketType)
 	}
@@ -343,6 +399,51 @@ func (ctx *Context)processPuback() error {
 	fmt.Println("Process PUBACK")
 
 	var msg pubackMsg
+	if err := msg.Read(ctx.r); err != nil {
+		return err
+	}
+	fmt.Println("pktID =", msg.pktID)
+	return nil
+}
+
+func (ctx *Context)processPubrec() error {
+	fmt.Println("Process PUBREC")
+
+	var msg pubrecMsg
+	if err := msg.Read(ctx.r); err != nil {
+		return err
+	}
+	fmt.Println("pktID =", msg.pktID)
+
+	var fh fixedHdr
+	fh.dup = 0x00
+	fh.qos = 0x01
+	fh.retain = 0x00
+	fh.controlPacketType = PUBREL
+	fh.remainingLength = 0
+
+	var prm pubrelMsg
+	prm.pktID = msg.pktID
+
+	var body bytes.Buffer
+	if err := prm.Write(&body); err != nil {
+		log.Fatal(err)
+	}
+	fh.remainingLength = body.Len()
+	if err := fh.Write(ctx.w); err != nil {
+		log.Fatal(err)
+	}
+	if _, err := body.WriteTo(ctx.w); err != nil {
+		log.Fatal(err)
+	}
+	ctx.w.Flush()
+	return nil
+}
+
+func (ctx *Context)processPubcomp() error {
+	fmt.Println("Process PUBCOMP")
+
+	var msg pubcompMsg
 	if err := msg.Read(ctx.r); err != nil {
 		return err
 	}
