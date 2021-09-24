@@ -53,7 +53,7 @@ func (s *str) Read(r io.Reader) error {
 
 	*s = str(buf)
 	return nil
-} 
+}
 
 func (s str) Write(w io.Writer) error {
 	dest := make([]byte, 2)
@@ -95,13 +95,13 @@ func (fh *fixedHdr) Read(r io.Reader) error {
 func (fh fixedHdr) Write(w io.Writer) error {
 	var dest uint8
 	dest = (fh.controlPacketType & 0xF)
-	
+
 	dest <<= 1
 	dest |= (fh.dup & 0x1)
-	
+
 	dest <<= 2
 	dest |= (fh.qos & 0x3)
-	
+
 	dest <<= 1
 	dest |= (fh.retain & 0x1)
 
@@ -117,7 +117,7 @@ type connectMsg struct {
 	protocolLevel uint8
 	connectFlags uint8
 	keepAlive uint16
-	
+
 	clientID str
 }
 
@@ -125,7 +125,7 @@ func (m connectMsg) Write(w io.Writer) error {
 	if err := m.protocolName.Write(w); err != nil {
 		return err
 	}
-	
+
 	protocolLevel := make([]byte, 1)
 	protocolLevel[0] = m.protocolLevel
 	if _, err := w.Write(protocolLevel); err != nil {
@@ -143,7 +143,7 @@ func (m connectMsg) Write(w io.Writer) error {
 	if _, err := w.Write(buf); err != nil {
 		return err
 	}
-	
+
 	if err := m.clientID.Write(w); err != nil {
 		return err
 	}
@@ -151,7 +151,7 @@ func (m connectMsg) Write(w io.Writer) error {
 }
 
 type connackMsg struct {
-	SessionPresent uint8 
+	SessionPresent uint8
 	ReturnCode uint8
 }
 
@@ -293,7 +293,7 @@ func (ctx *Context) SendConnect(clientID string) error {
 	fh.retain = 0x00
 	fh.controlPacketType = CONNECT
 	fh.remainingLength = 0
-	
+
 	var msg connectMsg
 	msg.protocolName = "MQTT"
 	msg.protocolLevel = 4
